@@ -94,8 +94,8 @@ async def deactivate_and_clear_api_key(api_key: str):
     await redis_client.delete(API_KEY_CACHE_KEY)
 
 
-async def process_single_request(request: ChatRequest, api_key: str) -> Dict:
-    """Process a single chat completion request"""
+async def process_single_request(request: ChatRequest, api_key: str, retry_count: int = 0) -> Dict:
+    """Process a single chat completion request with retry on 402/429"""
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}"
@@ -103,18 +103,24 @@ async def process_single_request(request: ChatRequest, api_key: str) -> Dict:
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
-                "https://api.deepinfra.com/v1/openai/chat/completions",
-                json=request.dict(),
-                headers=headers
+            "https://api.deepinfra.com/v1/openai/chat/completions",
+            json=request.dict(),
+            headers=headers
         ) as response:
-            if response.status == 429:
+            if response.status in (402, 429):
                 await deactivate_and_clear_api_key(api_key)
-                raise HTTPException(status_code=429, detail="Rate limit exceeded")
+                if retry_count < 1:  # Allow one retry
+                    new_api_key = await get_active_api_key()
+                    if not new_api_key:
+                        raise HTTPException(status_code=503, detail="No active API keys available")
+                    return await process_single_request(request, new_api_key, retry_count + 1)
+                raise HTTPException(status_code=429, detail="Rate limit or payment issue after retry")
 
             if response.status != 200:
                 raise HTTPException(status_code=response.status, detail=await response.text())
 
             return await response.json()
+
 
 
 async def process_requests_concurrently(requests: List[ChatRequest]) -> List[Dict]:
