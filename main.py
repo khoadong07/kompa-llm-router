@@ -28,7 +28,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.from_url(REDIS_URL)
 API_KEY_CACHE_KEY = "active_api_key"
 RATE_LIMIT_KEY = "chat_completions_rate_limit"
-MAX_REQUESTS = 60
+MAX_REQUESTS = 600
 RATE_LIMIT_WINDOW = 60  # 1 minute
 
 # Concurrency controls
