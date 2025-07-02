@@ -19,6 +19,7 @@ app = FastAPI()
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = os.getenv("DB_NAME")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME")
+TOGETHER_KEY = os.getenv("TOGETHER_KEY")
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
@@ -36,6 +37,7 @@ CONCURRENT_REQUESTS = 5
 semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
 request_queue = deque()
 
+TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
 
 # Pydantic models
 class Message(BaseModel):
@@ -94,22 +96,49 @@ async def deactivate_and_clear_api_key(api_key: str):
     await redis_client.delete(API_KEY_CACHE_KEY)
 
 
+# async def process_single_request(request: ChatRequest, api_key: str, retry_count: int = 0) -> Dict:
+#     """Process a single chat completion request with retry on 402/429"""
+#     headers = {
+#         "Content-Type": "application/json",
+#         "Authorization": f"Bearer {api_key}"
+#     }
+
+#     async with aiohttp.ClientSession() as session:
+#         async with session.post(
+#             "https://api.deepinfra.com/v1/openai/chat/completions",
+#             json=request.dict(),
+#             headers=headers
+#         ) as response:
+#             if response.status in (402, 429):
+#                 await deactivate_and_clear_api_key(api_key)
+#                 if retry_count < 1:  # Allow one retry
+#                     new_api_key = await get_active_api_key()
+#                     if not new_api_key:
+#                         raise HTTPException(status_code=503, detail="No active API keys available")
+#                     return await process_single_request(request, new_api_key, retry_count + 1)
+#                 raise HTTPException(status_code=429, detail="Rate limit or payment issue after retry")
+
+#             if response.status != 200:
+#                 raise HTTPException(status_code=response.status, detail=await response.text())
+
+#             return await response.json()
+
 async def process_single_request(request: ChatRequest, api_key: str, retry_count: int = 0) -> Dict:
-    """Process a single chat completion request with retry on 402/429"""
+    """Process a single chat completion request to Together.ai with retry on 402/429"""
+
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
+        "Authorization": f"Bearer {TOGETHER_KEY}"
     }
 
+    # Convert request to dict and force model to DeepSeek
+    payload = request.dict()
+
     async with aiohttp.ClientSession() as session:
-        async with session.post(
-            "https://api.deepinfra.com/v1/openai/chat/completions",
-            json=request.dict(),
-            headers=headers
-        ) as response:
+        async with session.post(TOGETHER_API_URL, json=payload, headers=headers) as response:
             if response.status in (402, 429):
                 await deactivate_and_clear_api_key(api_key)
-                if retry_count < 1:  # Allow one retry
+                if retry_count < 1:
                     new_api_key = await get_active_api_key()
                     if not new_api_key:
                         raise HTTPException(status_code=503, detail="No active API keys available")
@@ -120,7 +149,6 @@ async def process_single_request(request: ChatRequest, api_key: str, retry_count
                 raise HTTPException(status_code=response.status, detail=await response.text())
 
             return await response.json()
-
 
 
 async def process_requests_concurrently(requests: List[ChatRequest]) -> List[Dict]:
