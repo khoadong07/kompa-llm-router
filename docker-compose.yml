@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "18800:8000"
+      - "8889:8000"
     environment:
       - MONGO_URI=${MONGO_URI}
       - DB_NAME=${DB_NAME}
