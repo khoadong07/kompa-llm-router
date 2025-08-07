@@ -26,9 +26,6 @@ langfuse = Langfuse(
 
 # === Chat prompt template ===
 prompt = ChatPromptTemplate.from_template("""
-Bạn là trợ lý AI. Hãy trả lời yêu cầu người dùng một cách tự nhiên và chính xác.
-
-Lịch sử hội thoại:
 {messages}
 """)
 
